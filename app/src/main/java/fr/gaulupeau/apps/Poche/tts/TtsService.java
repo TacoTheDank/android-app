@@ -9,12 +9,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.graphics.Bitmap;
-import android.media.AudioAttributes;
-import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.os.Binder;
-import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.SystemClock;
@@ -32,6 +29,9 @@ import androidx.annotation.NonNull;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.util.Pair;
+import androidx.media.AudioAttributesCompat;
+import androidx.media.AudioFocusRequestCompat;
+import androidx.media.AudioManagerCompat;
 import androidx.media.session.MediaButtonReceiver;
 
 import java.util.Locale;
@@ -187,7 +187,7 @@ public class TtsService extends Service {
     private float pitch = 1.0f;
 
     private volatile TextToSpeech tts; // TODO: fix: access is not properly synchronized
-    private AudioFocusRequest audioFocusRequest;
+    private AudioFocusRequestCompat audioFocusRequest;
 
     private volatile boolean isTtsInitialized;
     private boolean isAudioFocusGranted;
@@ -231,6 +231,17 @@ public class TtsService extends Service {
         settings = App.getSettings();
         executor = Executors.newSingleThreadExecutor();
         audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+
+        // Initialize the focusrequest
+        audioFocusRequest = new AudioFocusRequestCompat.Builder(AudioManagerCompat.AUDIOFOCUS_GAIN)
+                .setOnAudioFocusChangeListener(audioFocusChangeListener)
+                .setWillPauseWhenDucked(true)
+                .setAudioAttributes(new AudioAttributesCompat.Builder()
+                        .setUsage(AudioAttributesCompat.USAGE_MEDIA)
+                        .setContentType(AudioAttributesCompat.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
+                .build();
 
         fakeSound = MediaPlayer.create(getApplicationContext(), R.raw.silence);
         mediaPlayerPageFlip = MediaPlayer.create(getApplicationContext(), R.raw.page_flip);
@@ -443,39 +454,19 @@ public class TtsService extends Service {
     }
 
     private int requestAudioFocus() {
-        int audioFocusResult;
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            audioFocusResult = audioManager.requestAudioFocus(audioFocusChangeListener,
-                    AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
-        } else {
-            if (audioFocusRequest == null) {
-                audioFocusRequest =
-                        new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                                .setOnAudioFocusChangeListener(audioFocusChangeListener)
-                                .setWillPauseWhenDucked(true)
-                                .setAudioAttributes(
-                                        new AudioAttributes.Builder()
-                                                .setUsage(AudioAttributes.USAGE_MEDIA)
-                                                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                                                .build()
-                                )
-                                .build();
-            }
-            audioFocusResult = audioManager.requestAudioFocus(audioFocusRequest);
-        }
-        return audioFocusResult;
+        return AudioManagerCompat.requestAudioFocus(audioManager, audioFocusRequest);
     }
 
     private void abandonAudioFocus() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            audioManager.abandonAudioFocus(audioFocusChangeListener);
-        } else {
-            if (audioFocusRequest != null && audioManager.abandonAudioFocusRequest(audioFocusRequest)
-                    != AudioManager.AUDIOFOCUS_REQUEST_FAILED) {
-                audioFocusRequest = null;
-            }
-        }
+        AudioManagerCompat.abandonAudioFocusRequest(audioManager, audioFocusRequest);
         isAudioFocusGranted = false;
+        if (!audioFocusRequestAbandoned()) {
+            Log.d(TAG, "Failed to abandon audioFocusRequest.");
+        }
+    }
+
+    public boolean audioFocusRequestAbandoned() {
+        return settings.getBoolean(AudioManager.AUDIOFOCUS_REQUEST_FAILED, false);
     }
 
     public void pauseCmd() {
