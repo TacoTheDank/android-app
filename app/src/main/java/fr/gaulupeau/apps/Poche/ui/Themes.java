@@ -3,6 +3,7 @@ package fr.gaulupeau.apps.Poche.ui;
 import android.app.Activity;
 import androidx.annotation.StringRes;
 import androidx.annotation.StyleRes;
+import androidx.core.app.ActivityCompat;
 
 import java.util.Map;
 import java.util.WeakHashMap;
@@ -44,7 +45,7 @@ public class Themes {
 
     public static void checkTheme(Activity activity) {
         Theme appliedTheme = appliedThemes.get(activity);
-        if(appliedTheme != theme) activity.recreate();
+        if(appliedTheme != theme) ActivityCompat.recreate(activity);
     }
 
     public enum Theme {
